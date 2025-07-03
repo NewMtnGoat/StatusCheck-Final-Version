@@ -1,8 +1,21 @@
 {
-  "description": "Status Check\nYour private support network. Immediate peer support for mental wellness.\n\nFull Description:\n\nStatus Check is a secure and private mental wellness app designed to provide immediate peer support for individuals navigating mental health challenges, particularly PTSD and high-stress environments. We believe no one should have to face their struggles alone. Status Check connects you with a trusted, private circle of friends, family, and peers who you choose, creating a simple yet powerful way to watch over one another.\n\nWhether you're feeling good, having an uneasy day, or struggling, your Support Circle is just a tap away. Our core mission is to provide a safe space for you to manage your wellness, connect with those who understand, and access help when you need it most.\n\nKey Features:\n\nPrivate Support Circle: Build your own trusted network. Add friends and family to your private circle using their unique User ID, ensuring you are only connected to people you know and trust.\n\nDaily Status Check: Easily update your daily status to \"Feeling Good,\" \"Uneasy,\" or \"Struggling.\" This provides a simple, passive way for your circle to know how you're doing without needing to ask.\n\nGraduated Alert System:\n\nCrisis Alert (Red Alert): A prominent, one-touch button that immediately notifies your entire Support Circle that you are in crisis and need help now. The system coordinates responses so everyone knows when the alert is being handled.\n\nSupport Request (Yellow Alert): A lower-priority alert for when you're not in crisis but would appreciate a friend to talk to.\n\nAI Companion (Premium): A private, 24/7 AI chat companion powered by advanced AI. It's a safe space to talk, vent, or explore your thoughts. The AI is trained to recognize keywords indicating severe distress and will gently suggest activating a Crisis Alert or contacting a professional.\n\nSecure AI Journal (Premium): A private and encrypted journal to log your thoughts and feelings. Ask your journal questions and let our AI analyze your recent entries to provide gentle, pattern-based insights into your wellness journey.\n\nResource Library: Access a curated list of national crisis hotlines (Free) and an expanded library of high-quality guided meditations, wellness courses, and helpful articles (Premium).\n\nPrivacy First:\nYour privacy is our highest priority. Your Support Circle is private, your journal is encrypted, and your data is never shared. Status Check is your safe space.\n\nDownload Status Check today and build your circle of support. You are not alone.",
-
   "name": "Status Check",
-  "theme_color": "#000000",
-  "background_color": "#000000",
-  "short_name": "Status Check"
+  "short_name": "Status Check",
+  "description": "A secure and private mental wellness app for peer support.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#111827",
+  "theme_color": "#1f2937",
+  "icons": [
+    {
+      "src": "/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
 }

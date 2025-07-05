@@ -367,13 +367,49 @@ function ResourcesScreen() {
 }
 
 function ProfileScreen() {
-    const { auth, user, userData } = useFirebase();
+    const { auth, user, userData, db } = useFirebase();
+    const [success, setSuccess] = useState('');
+
+    const handleStatusUpdate = async (newStatus) => {
+        if (!user) return;
+        const userDocRef = db.collection('users').doc(user.uid);
+        await userDocRef.update({ status: newStatus });
+        setSuccess(`Your status has been updated to "${newStatus}"`);
+        setTimeout(() => setSuccess(''), 3000); // Clear message after 3 seconds
+    };
+
+    const handleAmbassadorToggle = async (e) => {
+        if (!user) return;
+        const isAmbassador = e.target.checked;
+        const userDocRef = db.collection('users').doc(user.uid);
+        await userDocRef.update({ isAmbassador });
+        setSuccess(`Ambassador status ${isAmbassador ? 'enabled' : 'disabled'}.`);
+        setTimeout(() => setSuccess(''), 3000);
+    };
+
     return (
         <div>
             <h1 style={styles.header}>Profile</h1>
+            {success && <p style={styles.successText}>{success}</p>}
             <div style={styles.card}>
+                <h2 style={styles.cardTitle}>My Details</h2>
                 <p style={styles.label}>Username: {userData?.username}</p>
-                <p style={styles.label}>Email: {user?.email}</p>
+                <p style={styles.label}>Email: {userData?.email}</p>
+            </div>
+            <div style={styles.card}>
+                <h2 style={styles.cardTitle}>Set Your Daily Status</h2>
+                <div style={{display: 'flex', flexDirection: 'column', gap: '10px'}}>
+                    <button onClick={() => handleStatusUpdate('Feeling Good')} style={{...styles.button, backgroundColor: '#22c55e'}}>Feeling Good</button>
+                    <button onClick={() => handleStatusUpdate('Uneasy')} style={{...styles.button, backgroundColor: '#f59e0b'}}>Uneasy</button>
+                    <button onClick={() => handleStatusUpdate('Struggling')} style={{...styles.button, backgroundColor: '#ef4444'}}>Struggling</button>
+                </div>
+            </div>
+             <div style={styles.card}>
+                <h2 style={styles.cardTitle}>Ambassador Program</h2>
+                <label style={styles.toggleContainer}>
+                    <p style={{...styles.label, marginBottom: 0}}>Become an Ambassador</p>
+                    <input type="checkbox" checked={userData?.isAmbassador || false} onChange={handleAmbassadorToggle} />
+                </label>
             </div>
             <button onClick={() => auth.signOut()} style={{...styles.button, backgroundColor: '#6b7280'}}>
                 Log Out
@@ -488,7 +524,7 @@ const styles = {
   successText: {
       color: '#4ade80',
       textAlign: 'center',
-      marginTop: '16px',
+      margin: '16px 0',
   },
   appShell: {
     backgroundColor: '#1f2937', // Darker background for the app
@@ -597,6 +633,12 @@ const styles = {
       border: 'none',
       borderRadius: '4px',
       padding: '8px 12px',
+      cursor: 'pointer',
+  },
+  toggleContainer: {
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center',
       cursor: 'pointer',
   }
 };

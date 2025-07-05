@@ -424,7 +424,47 @@ function JournalScreen() {
 }
 
 function ResourcesScreen() {
-    return <div><h1 style={styles.header}>Resources</h1></div>
+    const { userData } = useFirebase();
+
+    const freeResources = [
+        { name: 'National Crisis and Suicide Lifeline', number: '988', link: 'tel:988' },
+        { name: 'Crisis Text Line', number: 'Text HOME to 741741', link: 'sms:741741' },
+    ];
+    const premiumResources = [
+        { name: 'Guided Meditation for Anxiety', link: '#' },
+        { name: 'Video Course: Understanding PTSD', link: '#' },
+        { name: 'Book Summary: The Body Keeps the Score', link: '#' },
+    ];
+
+    return (
+        <div>
+            <h1 style={styles.header}>Resources</h1>
+            <div style={styles.card}>
+                <h2 style={styles.cardTitle}>Immediate Help</h2>
+                {freeResources.map(resource => (
+                    <a href={resource.link} key={resource.name} style={styles.resourceItem}>
+                        <p style={styles.resourceName}>{resource.name}</p>
+                        <p style={styles.resourceContact}>{resource.number}</p>
+                    </a>
+                ))}
+            </div>
+            <div style={styles.card}>
+                <h2 style={styles.cardTitle}>Premium Wellness Library</h2>
+                {userData?.isPremium ? (
+                     premiumResources.map(resource => (
+                        <a href={resource.link} key={resource.name} style={styles.resourceItem}>
+                            <p style={styles.resourceName}>{resource.name}</p>
+                        </a>
+                    ))
+                ) : (
+                    <div style={styles.premiumUpsell}>
+                        <p>Subscribe to unlock guided meditations, courses, and more.</p>
+                        <button style={{...styles.button, marginTop: '16px', backgroundColor: '#9333ea'}}>Subscribe Now</button>
+                    </div>
+                )}
+            </div>
+        </div>
+    )
 }
 
 function ProfileScreen() {
@@ -716,6 +756,29 @@ const styles = {
       fontSize: '10px',
       textAlign: 'right',
       marginTop: '8px',
+  },
+  resourceItem: {
+      display: 'block',
+      backgroundColor: '#374151',
+      padding: '16px',
+      borderRadius: '8px',
+      marginBottom: '12px',
+      textDecoration: 'none',
+  },
+  resourceName: {
+      color: '#f9fafb',
+      fontWeight: 'bold',
+  },
+  resourceContact: {
+      color: '#22d3ee',
+      marginTop: '4px',
+  },
+  premiumUpsell: {
+      textAlign: 'center',
+      padding: '24px',
+      backgroundColor: 'rgba(147, 51, 234, 0.1)',
+      border: '1px dashed #9333ea',
+      borderRadius: '8px',
   }
 };
 

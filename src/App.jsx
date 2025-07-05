@@ -58,7 +58,6 @@ const FirebaseProvider = ({ children }) => {
                 if (docSnap.exists) {
                     setUserData(docSnap.data());
                 } else {
-                    // This can happen briefly for a new user, which is fine.
                     setUserData(null);
                 }
             });
@@ -66,7 +65,7 @@ const FirebaseProvider = ({ children }) => {
         } else {
             setUserData(null);
         }
-    }, [user]); // Rerun this effect whenever the user object changes
+    }, [user]);
 
     const value = { user, userData, loading, auth, db };
 
@@ -360,158 +359,21 @@ function SupportCircleScreen() {
 }
 
 function JournalScreen() {
-    const { user, db } = useFirebase();
-    const [entries, setEntries] = useState([]);
-    const [newEntry, setNewEntry] = useState('');
-
-    useEffect(() => {
-        if (!user) return;
-
-        const journalCollectionRef = db.collection('users').doc(user.uid).collection('journal').orderBy('createdAt', 'desc');
-        const unsubscribe = journalCollectionRef.onSnapshot(snapshot => {
-            const entriesData = snapshot.docs.map(doc => ({
-                id: doc.id,
-                ...doc.data()
-            }));
-            setEntries(entriesData);
-        });
-
-        return () => unsubscribe();
-    }, [user, db]);
-
-    const handleAddEntry = async (e) => {
-        e.preventDefault();
-        if (!newEntry.trim() || !user) return;
-
-        await db.collection('users').doc(user.uid).collection('journal').add({
-            text: newEntry,
-            createdAt: firebase.firestore.FieldValue.serverTimestamp()
-        });
-        setNewEntry('');
-    };
-
-    return (
-        <div>
-            <h1 style={styles.header}>My Journal</h1>
-            <div style={styles.card}>
-                <h2 style={styles.cardTitle}>New Entry</h2>
-                <form onSubmit={handleAddEntry}>
-                    <textarea 
-                        style={{...styles.input, height: '100px', resize: 'vertical'}}
-                        placeholder="How are you feeling today?"
-                        value={newEntry}
-                        onChange={(e) => setNewEntry(e.target.value)}
-                    />
-                    <button type="submit" style={styles.button}>Save Entry</button>
-                </form>
-            </div>
-            <div style={styles.card}>
-                <h2 style={styles.cardTitle}>Recent Entries</h2>
-                {entries.length > 0 ? (
-                    entries.map(entry => (
-                        <div key={entry.id} style={styles.journalEntry}>
-                            <p style={styles.journalText}>{entry.text}</p>
-                            <p style={styles.journalDate}>
-                                {entry.createdAt ? new Date(entry.createdAt.seconds * 1000).toLocaleDateString() : 'Just now'}
-                            </p>
-                        </div>
-                    ))
-                ) : (
-                    <p style={styles.subtitle}>No journal entries yet.</p>
-                )}
-            </div>
-        </div>
-    );
+    return <div><h1 style={styles.header}>Journal</h1></div>
 }
 
 function ResourcesScreen() {
-    const { userData } = useFirebase();
-
-    const freeResources = [
-        { name: 'National Crisis and Suicide Lifeline', number: '988', link: 'tel:988' },
-        { name: 'Crisis Text Line', number: 'Text HOME to 741741', link: 'sms:741741' },
-    ];
-    const premiumResources = [
-        { name: 'Guided Meditation for Anxiety', link: '#' },
-        { name: 'Video Course: Understanding PTSD', link: '#' },
-        { name: 'Book Summary: The Body Keeps the Score', link: '#' },
-    ];
-
-    return (
-        <div>
-            <h1 style={styles.header}>Resources</h1>
-            <div style={styles.card}>
-                <h2 style={styles.cardTitle}>Immediate Help</h2>
-                {freeResources.map(resource => (
-                    <a href={resource.link} key={resource.name} style={styles.resourceItem}>
-                        <p style={styles.resourceName}>{resource.name}</p>
-                        <p style={styles.resourceContact}>{resource.number}</p>
-                    </a>
-                ))}
-            </div>
-            <div style={styles.card}>
-                <h2 style={styles.cardTitle}>Premium Wellness Library</h2>
-                {userData?.isPremium ? (
-                     premiumResources.map(resource => (
-                        <a href={resource.link} key={resource.name} style={styles.resourceItem}>
-                            <p style={styles.resourceName}>{resource.name}</p>
-                        </a>
-                    ))
-                ) : (
-                    <div style={styles.premiumUpsell}>
-                        <p>Subscribe to unlock guided meditations, courses, and more.</p>
-                        <button style={{...styles.button, marginTop: '16px', backgroundColor: '#9333ea'}}>Subscribe Now</button>
-                    </div>
-                )}
-            </div>
-        </div>
-    )
+    return <div><h1 style={styles.header}>Resources</h1></div>
 }
 
 function ProfileScreen() {
-    const { auth, user, userData, db } = useFirebase();
-    const [success, setSuccess] = useState('');
-
-    const handleStatusUpdate = async (newStatus) => {
-        if (!user) return;
-        const userDocRef = db.collection('users').doc(user.uid);
-        await userDocRef.update({ status: newStatus });
-        setSuccess(`Your status has been updated to "${newStatus}"`);
-        setTimeout(() => setSuccess(''), 3000); // Clear message after 3 seconds
-    };
-
-    const handleAmbassadorToggle = async (e) => {
-        if (!user) return;
-        const isAmbassador = e.target.checked;
-        const userDocRef = db.collection('users').doc(user.uid);
-        await userDocRef.update({ isAmbassador });
-        setSuccess(`Ambassador status ${isAmbassador ? 'enabled' : 'disabled'}.`);
-        setTimeout(() => setSuccess(''), 3000);
-    };
-
+    const { auth, user, userData } = useFirebase();
     return (
         <div>
             <h1 style={styles.header}>Profile</h1>
-            {success && <p style={styles.successText}>{success}</p>}
             <div style={styles.card}>
-                <h2 style={styles.cardTitle}>My Details</h2>
                 <p style={styles.label}>Username: {userData?.username}</p>
-                <p style={styles.label}>Email: {userData?.email}</p>
-            </div>
-            <div style={styles.card}>
-                <h2 style={styles.cardTitle}>Set Your Daily Status</h2>
-                <div style={{display: 'flex', flexDirection: 'column', gap: '10px'}}>
-                    <button onClick={() => handleStatusUpdate('Feeling Good')} style={{...styles.button, backgroundColor: '#22c55e'}}>Feeling Good</button>
-                    <button onClick={() => handleStatusUpdate('Uneasy')} style={{...styles.button, backgroundColor: '#f59e0b'}}>Uneasy</button>
-                    <button onClick={() => handleStatusUpdate('Struggling')} style={{...styles.button, backgroundColor: '#ef4444'}}>Struggling</button>
-                </div>
-            </div>
-             <div style={styles.card}>
-                <h2 style={styles.cardTitle}>Ambassador Program</h2>
-                <label style={styles.toggleContainer}>
-                    <p style={{...styles.label, marginBottom: 0}}>Become an Ambassador</p>
-                    <input type="checkbox" checked={userData?.isAmbassador || false} onChange={handleAmbassadorToggle} />
-                </label>
+                <p style={styles.label}>Email: {user?.email}</p>
             </div>
             <button onClick={() => auth.signOut()} style={{...styles.button, backgroundColor: '#6b7280'}}>
                 Log Out
@@ -626,7 +488,7 @@ const styles = {
   successText: {
       color: '#4ade80',
       textAlign: 'center',
-      margin: '16px 0',
+      marginTop: '16px',
   },
   appShell: {
     backgroundColor: '#1f2937', // Darker background for the app
@@ -736,50 +598,6 @@ const styles = {
       borderRadius: '4px',
       padding: '8px 12px',
       cursor: 'pointer',
-  },
-  toggleContainer: {
-      display: 'flex',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      cursor: 'pointer',
-  },
-  journalEntry: {
-      backgroundColor: '#374151',
-      padding: '12px',
-      borderRadius: '4px',
-      marginBottom: '8px',
-  },
-  journalText: {
-      color: '#f9fafb',
-  },
-  journalDate: {
-      color: '#9ca3af',
-      fontSize: '10px',
-      textAlign: 'right',
-      marginTop: '8px',
-  },
-  resourceItem: {
-      display: 'block',
-      backgroundColor: '#374151',
-      padding: '16px',
-      borderRadius: '8px',
-      marginBottom: '12px',
-      textDecoration: 'none',
-  },
-  resourceName: {
-      color: '#f9fafb',
-      fontWeight: 'bold',
-  },
-  resourceContact: {
-      color: '#22d3ee',
-      marginTop: '4px',
-  },
-  premiumUpsell: {
-      textAlign: 'center',
-      padding: '24px',
-      backgroundColor: 'rgba(147, 51, 234, 0.1)',
-      border: '1px dashed #9333ea',
-      borderRadius: '8px',
   }
 };
 

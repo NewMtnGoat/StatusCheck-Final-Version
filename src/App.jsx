@@ -21,17 +21,30 @@ if (!firebase.apps.length) {
 const auth = firebase.auth();
 const db = firebase.firestore();
 
-// --- Mock API for Quotes ---
-const mockAPI = {
-    getMotivationalQuote: async () => {
-        const quotes = [
-            "The sun is a daily reminder that we too can rise again from the darkness, that we too can shine our own light.",
-            "You are not a drop in the ocean. You are the entire ocean in a drop.",
-            "It's okay not to be okay. It's a part of being human.",
-        ];
-        return quotes[Math.floor(Math.random() * quotes.length)];
+// --- Gemini API Mock ---
+const callGeminiAPI = async (prompt) => {
+    console.log("Sending prompt to Gemini:", prompt);
+
+    const isDistress = /crisis|suicide|self-harm|hurting myself|can't go on/i.test(prompt);
+
+    if (isDistress) {
+        return "It sounds like you are going through a very difficult time. I'm concerned for your safety. Please consider reaching out to your support circle by using the Crisis Alert button or contacting a professional from the Resource Library.";
     }
+
+    const responses = [
+        "I'm here to listen. Tell me more about what's on your mind.",
+        "That sounds like a lot to handle. How are you coping with it?",
+        "Thank you for sharing that with me. It takes courage to open up.",
+        "Remember to be kind to yourself. You're doing the best you can.",
+        "What's one small thing you could do for yourself right now?"
+    ];
+
+    // Simulate network delay
+    await new Promise(res => setTimeout(res, 1000));
+
+    return responses[Math.floor(Math.random() * responses.length)];
 };
+
 
 // --- React Context for Auth and DB ---
 const FirebaseContext = createContext(null);
@@ -41,25 +54,19 @@ const FirebaseProvider = ({ children }) => {
     const [userData, setUserData] = useState(null);
     const [loading, setLoading] = useState(true);
 
-    // Effect for handling authentication state changes
     useEffect(() => {
         const unsubscribe = auth.onAuthStateChanged(user => {
             setUser(user);
             setLoading(false);
         });
-        return () => unsubscribe(); // Cleanup subscription on unmount
+        return () => unsubscribe();
     }, []);
 
-    // Effect for fetching user data when user object changes
     useEffect(() => {
         if (user) {
             const userDocRef = db.collection('users').doc(user.uid);
             const unsubscribeSnapshot = userDocRef.onSnapshot(docSnap => {
-                if (docSnap.exists) {
-                    setUserData(docSnap.data());
-                } else {
-                    setUserData(null);
-                }
+                setUserData(docSnap.exists ? docSnap.data() : null);
             });
             return () => unsubscribeSnapshot();
         } else {
@@ -129,7 +136,6 @@ function AuthScreen() {
       try {
         const userCredential = await auth.createUserWithEmailAndPassword(email, password);
         const newUser = userCredential.user;
-        // Create user document
         await db.collection('users').doc(newUser.uid).set({
           uid: newUser.uid,
           email: newUser.email,
@@ -138,7 +144,6 @@ function AuthScreen() {
           isAmbassador: false,
           isPremium: false,
         });
-        // Create their support circle document
         await db.collection('supportCircles').doc(newUser.uid).set({ members: [] });
       } catch (err) {
         setError(err.message);
@@ -196,6 +201,8 @@ function AppShell() {
                 return <HomeScreen />;
             case 'My Circle':
                 return <SupportCircleScreen />;
+            case 'AI Companion':
+                return <AICompanionScreen />;
             case 'Journal':
                 return <JournalScreen />;
             case 'Resources':
@@ -225,7 +232,7 @@ function HomeScreen() {
     const [alertType, setAlertType] = useState('');
 
     useEffect(() => {
-        mockAPI.getMotivationalQuote().then(setQuote);
+        callGeminiAPI("Give me a short, uplifting motivational quote about mental resilience.").then(setQuote);
     }, []);
 
     const handleAlertClick = (type) => {
@@ -315,7 +322,7 @@ function SupportCircleScreen() {
             const circleDocRef = db.collection('supportCircles').doc(user.uid);
             await circleDocRef.set({ 
                 members: firebase.firestore.FieldValue.arrayUnion(friendId) 
-            }, { merge: true }); // Use set with merge to create if it doesn't exist
+            }, { merge: true });
 
             setSuccess(`Added friend to your circle!`);
             setFriendId('');
@@ -368,6 +375,57 @@ function SupportCircleScreen() {
                     <p style={styles.subtitle}>Your circle is empty.</p>
                 )}
             </div>
+        </div>
+    );
+}
+
+function AICompanionScreen() {
+    const { userData } = useFirebase();
+    const [chatHistory, setChatHistory] = useState([{sender: 'ai', text: 'Hello! I am your AI Companion. Feel free to talk about anything on your mind.'}]);
+    const [message, setMessage] = useState('');
+    const [isLoading, setIsLoading] = useState(false);
+
+    const handleSendMessage = async (e) => {
+        e.preventDefault();
+        if (!message.trim()) return;
+
+        const newMessage = { sender: 'user', text: message };
+        setChatHistory(prev => [...prev, newMessage]);
+        setMessage('');
+        setIsLoading(true);
+
+        const aiResponse = await callGeminiAPI(message);
+
+        setChatHistory(prev => [...prev, { sender: 'ai', text: aiResponse }]);
+        setIsLoading(false);
+    };
+
+    if (!userData?.isPremium) {
+        return <PremiumUpsell featureName="AI Companion Chat" />;
+    }
+
+    return (
+        <div style={{display: 'flex', flexDirection: 'column', height: '100%'}}>
+            <h1 style={styles.header}>AI Companion</h1>
+            <div style={styles.chatWindow}>
+                {chatHistory.map((chat, index) => (
+                    <div key={index} style={chat.sender === 'user' ? styles.userMessage : styles.aiMessage}>
+                        <p style={styles.chatText}>{chat.text}</p>
+                    </div>
+                ))}
+                {isLoading && <div style={styles.aiMessage}><p style={styles.chatText}>...</p></div>}
+            </div>
+            <form onSubmit={handleSendMessage} style={styles.chatForm}>
+                <input 
+                    type="text" 
+                    style={styles.chatInput} 
+                    placeholder="Type your message..."
+                    value={message}
+                    onChange={(e) => setMessage(e.target.value)}
+                    disabled={isLoading}
+                />
+                <button type="submit" style={styles.sendButton} disabled={isLoading}>Send</button>
+            </form>
         </div>
     );
 }
@@ -475,10 +533,7 @@ function ResourcesScreen() {
                         </a>
                     ))
                 ) : (
-                    <div style={styles.premiumUpsell}>
-                        <p>Subscribe to unlock guided meditations, courses, and more.</p>
-                        <button style={{...styles.button, marginTop: '16px', backgroundColor: '#9333ea'}}>Subscribe Now</button>
-                    </div>
+                    <PremiumUpsell featureName="Expanded Resource Library" />
                 )}
             </div>
         </div>
@@ -547,10 +602,26 @@ function ProfileScreen() {
     )
 }
 
+function PremiumUpsell({ featureName }) {
+    const { user, db } = useFirebase();
+    const handleSubscribe = async () => {
+        window.alert("This would normally redirect to a payment processor. For this demo, we'll enable premium features now.");
+        if (user) {
+            await db.collection('users').doc(user.uid).update({ isPremium: true });
+        }
+    }
+    return (
+        <div style={styles.premiumUpsell}>
+            <p>Subscribe to unlock the {featureName} and more.</p>
+            <button onClick={handleSubscribe} style={{...styles.button, marginTop: '16px', backgroundColor: '#9333ea'}}>Subscribe Now for $2.99/month</button>
+        </div>
+    )
+}
+
 
 // --- Navigation ---
 function BottomNavBar({ currentPage, setCurrentPage }) {
-    const navItems = ['Home', 'My Circle', 'Journal', 'Resources', 'Profile'];
+    const navItems = ['Home', 'My Circle', 'AI Companion', 'Journal', 'Resources', 'Profile'];
     return (
         <div style={styles.navBar}>
             {navItems.map(item => (
@@ -673,6 +744,8 @@ const styles = {
       padding: '24px',
       overflowY: 'auto',
       backgroundColor: '#111827', // Even darker for the content area
+      display: 'flex',
+      flexDirection: 'column',
   },
   header: {
     color: '#22d3ee',
@@ -807,6 +880,54 @@ const styles = {
       backgroundColor: 'rgba(147, 51, 234, 0.1)',
       border: '1px dashed #9333ea',
       borderRadius: '8px',
+  },
+  chatWindow: {
+      flex: 1,
+      overflowY: 'auto',
+      padding: '10px',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '12px',
+  },
+  userMessage: {
+      alignSelf: 'flex-end',
+      backgroundColor: '#0891b2',
+      borderRadius: '15px',
+      padding: '10px 15px',
+      maxWidth: '80%',
+  },
+  aiMessage: {
+      alignSelf: 'flex-start',
+      backgroundColor: '#374151',
+      borderRadius: '15px',
+      padding: '10px 15px',
+      maxWidth: '80%',
+  },
+  chatText: {
+      color: '#fff',
+  },
+  chatForm: {
+      display: 'flex',
+      padding: '10px',
+      borderTop: '1px solid #374151',
+  },
+  chatInput: {
+      flex: 1,
+      backgroundColor: '#374151',
+      color: '#f9fafb',
+      border: '1px solid #4b5563',
+      borderRadius: '20px',
+      padding: '10px 15px',
+      fontSize: '16px',
+  },
+  sendButton: {
+      backgroundColor: '#0891b2',
+      color: '#fff',
+      border: 'none',
+      borderRadius: '20px',
+      padding: '10px 15px',
+      marginLeft: '10px',
+      cursor: 'pointer',
   }
 };
 

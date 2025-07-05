@@ -359,7 +359,68 @@ function SupportCircleScreen() {
 }
 
 function JournalScreen() {
-    return <div><h1 style={styles.header}>Journal</h1></div>
+    const { user, db } = useFirebase();
+    const [entries, setEntries] = useState([]);
+    const [newEntry, setNewEntry] = useState('');
+
+    useEffect(() => {
+        if (!user) return;
+
+        const journalCollectionRef = db.collection('users').doc(user.uid).collection('journal').orderBy('createdAt', 'desc');
+        const unsubscribe = journalCollectionRef.onSnapshot(snapshot => {
+            const entriesData = snapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }));
+            setEntries(entriesData);
+        });
+
+        return () => unsubscribe();
+    }, [user, db]);
+
+    const handleAddEntry = async (e) => {
+        e.preventDefault();
+        if (!newEntry.trim() || !user) return;
+
+        await db.collection('users').doc(user.uid).collection('journal').add({
+            text: newEntry,
+            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        setNewEntry('');
+    };
+
+    return (
+        <div>
+            <h1 style={styles.header}>My Journal</h1>
+            <div style={styles.card}>
+                <h2 style={styles.cardTitle}>New Entry</h2>
+                <form onSubmit={handleAddEntry}>
+                    <textarea 
+                        style={{...styles.input, height: '100px', resize: 'vertical'}}
+                        placeholder="How are you feeling today?"
+                        value={newEntry}
+                        onChange={(e) => setNewEntry(e.target.value)}
+                    />
+                    <button type="submit" style={styles.button}>Save Entry</button>
+                </form>
+            </div>
+            <div style={styles.card}>
+                <h2 style={styles.cardTitle}>Recent Entries</h2>
+                {entries.length > 0 ? (
+                    entries.map(entry => (
+                        <div key={entry.id} style={styles.journalEntry}>
+                            <p style={styles.journalText}>{entry.text}</p>
+                            <p style={styles.journalDate}>
+                                {entry.createdAt ? new Date(entry.createdAt.seconds * 1000).toLocaleDateString() : 'Just now'}
+                            </p>
+                        </div>
+                    ))
+                ) : (
+                    <p style={styles.subtitle}>No journal entries yet.</p>
+                )}
+            </div>
+        </div>
+    );
 }
 
 function ResourcesScreen() {
@@ -640,6 +701,21 @@ const styles = {
       justifyContent: 'space-between',
       alignItems: 'center',
       cursor: 'pointer',
+  },
+  journalEntry: {
+      backgroundColor: '#374151',
+      padding: '12px',
+      borderRadius: '4px',
+      marginBottom: '8px',
+  },
+  journalText: {
+      color: '#f9fafb',
+  },
+  journalDate: {
+      color: '#9ca3af',
+      fontSize: '10px',
+      textAlign: 'right',
+      marginTop: '8px',
   }
 };
 

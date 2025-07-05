@@ -306,22 +306,36 @@ function SupportCircleScreen() {
         if (!friendId.trim()) { setError("Please enter a User ID."); return; }
         if (friendId === user.uid) { setError("You cannot add yourself to your circle."); return; }
 
-        const friendDocRef = db.collection('users').doc(friendId);
-        const friendDoc = await friendDocRef.get();
+        try {
+            const friendDocRef = db.collection('users').doc(friendId);
+            const friendDoc = await friendDocRef.get();
 
-        if (!friendDoc.exists) { setError("User ID not found."); return; }
+            if (!friendDoc.exists) { setError("User ID not found."); return; }
 
-        const circleDocRef = db.collection('supportCircles').doc(user.uid);
-        await circleDocRef.update({ members: firebase.firestore.FieldValue.arrayUnion(friendId) });
+            const circleDocRef = db.collection('supportCircles').doc(user.uid);
+            await circleDocRef.set({ 
+                members: firebase.firestore.FieldValue.arrayUnion(friendId) 
+            }, { merge: true }); // Use set with merge to create if it doesn't exist
 
-        setSuccess(`Added friend to your circle!`);
-        setFriendId('');
+            setSuccess(`Added friend to your circle!`);
+            setFriendId('');
+        } catch (err) {
+            setError("Could not add friend. Please try again.");
+            console.error(err);
+        }
     };
 
     const handleRemoveFriend = async (uidToRemove) => {
-        const circleDocRef = db.collection('supportCircles').doc(user.uid);
-        await circleDocRef.update({ members: firebase.firestore.FieldValue.arrayRemove(uidToRemove) });
-        setSuccess('Friend removed from your circle.');
+        try {
+            const circleDocRef = db.collection('supportCircles').doc(user.uid);
+            await circleDocRef.update({ 
+                members: firebase.firestore.FieldValue.arrayRemove(uidToRemove) 
+            });
+            setSuccess('Friend removed from your circle.');
+        } catch (err) {
+            setError("Could not remove friend. Please try again.");
+            console.error(err);
+        }
     };
 
     return (
@@ -381,12 +395,16 @@ function JournalScreen() {
     const handleAddEntry = async (e) => {
         e.preventDefault();
         if (!newEntry.trim() || !user) return;
-
-        await db.collection('users').doc(user.uid).collection('journal').add({
-            text: newEntry,
-            createdAt: firebase.firestore.FieldValue.serverTimestamp()
-        });
-        setNewEntry('');
+        try {
+            await db.collection('users').doc(user.uid).collection('journal').add({
+                text: newEntry,
+                createdAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+            setNewEntry('');
+        } catch(err) {
+            console.error("Error adding journal entry:", err);
+            alert("Could not save your entry. Please try again.");
+        }
     };
 
     return (
@@ -424,47 +442,7 @@ function JournalScreen() {
 }
 
 function ResourcesScreen() {
-    const { userData } = useFirebase();
-
-    const freeResources = [
-        { name: 'National Crisis and Suicide Lifeline', number: '988', link: 'tel:988' },
-        { name: 'Crisis Text Line', number: 'Text HOME to 741741', link: 'sms:741741' },
-    ];
-    const premiumResources = [
-        { name: 'Guided Meditation for Anxiety', link: '#' },
-        { name: 'Video Course: Understanding PTSD', link: '#' },
-        { name: 'Book Summary: The Body Keeps the Score', link: '#' },
-    ];
-
-    return (
-        <div>
-            <h1 style={styles.header}>Resources</h1>
-            <div style={styles.card}>
-                <h2 style={styles.cardTitle}>Immediate Help</h2>
-                {freeResources.map(resource => (
-                    <a href={resource.link} key={resource.name} style={styles.resourceItem}>
-                        <p style={styles.resourceName}>{resource.name}</p>
-                        <p style={styles.resourceContact}>{resource.number}</p>
-                    </a>
-                ))}
-            </div>
-            <div style={styles.card}>
-                <h2 style={styles.cardTitle}>Premium Wellness Library</h2>
-                {userData?.isPremium ? (
-                     premiumResources.map(resource => (
-                        <a href={resource.link} key={resource.name} style={styles.resourceItem}>
-                            <p style={styles.resourceName}>{resource.name}</p>
-                        </a>
-                    ))
-                ) : (
-                    <div style={styles.premiumUpsell}>
-                        <p>Subscribe to unlock guided meditations, courses, and more.</p>
-                        <button style={{...styles.button, marginTop: '16px', backgroundColor: '#9333ea'}}>Subscribe Now</button>
-                    </div>
-                )}
-            </div>
-        </div>
-    )
+    return <div><h1 style={styles.header}>Resources</h1></div>
 }
 
 function ProfileScreen() {
@@ -473,19 +451,29 @@ function ProfileScreen() {
 
     const handleStatusUpdate = async (newStatus) => {
         if (!user) return;
-        const userDocRef = db.collection('users').doc(user.uid);
-        await userDocRef.update({ status: newStatus });
-        setSuccess(`Your status has been updated to "${newStatus}"`);
-        setTimeout(() => setSuccess(''), 3000); // Clear message after 3 seconds
+        try {
+            const userDocRef = db.collection('users').doc(user.uid);
+            await userDocRef.set({ status: newStatus }, { merge: true });
+            setSuccess(`Your status has been updated to "${newStatus}"`);
+            setTimeout(() => setSuccess(''), 3000);
+        } catch (err) {
+            console.error("Error updating status:", err);
+            alert("Could not update your status. Please try again.");
+        }
     };
 
     const handleAmbassadorToggle = async (e) => {
         if (!user) return;
-        const isAmbassador = e.target.checked;
-        const userDocRef = db.collection('users').doc(user.uid);
-        await userDocRef.update({ isAmbassador });
-        setSuccess(`Ambassador status ${isAmbassador ? 'enabled' : 'disabled'}.`);
-        setTimeout(() => setSuccess(''), 3000);
+        try {
+            const isAmbassador = e.target.checked;
+            const userDocRef = db.collection('users').doc(user.uid);
+            await userDocRef.set({ isAmbassador }, { merge: true });
+            setSuccess(`Ambassador status ${isAmbassador ? 'enabled' : 'disabled'}.`);
+            setTimeout(() => setSuccess(''), 3000);
+        } catch (err) {
+            console.error("Error updating ambassador status:", err);
+            alert("Could not update your ambassador status. Please try again.");
+        }
     };
 
     return (

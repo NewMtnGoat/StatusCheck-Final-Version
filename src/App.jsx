@@ -1,4 +1,4 @@
-import React, { useState, useEffect, createContext, useContext } from 'react';
+import React, { useState, useEffect, createContext, useContext, useRef } from 'react';
 import firebase from 'firebase/compat/app';
 import 'firebase/compat/auth';
 import 'firebase/compat/firestore';
@@ -21,28 +21,24 @@ if (!firebase.apps.length) {
 const auth = firebase.auth();
 const db = firebase.firestore();
 
-// --- Gemini API Mock ---
-const callGeminiAPI = async (prompt) => {
-    console.log("Sending prompt to Gemini:", prompt);
+// --- Advanced Mock Gemini API ---
+const callGeminiAPI = async (prompt, context = null) => {
+    // Simulate network delay for a more realistic feel
+    await new Promise(res => setTimeout(res, 1200));
 
-    const isDistress = /crisis|suicide|self-harm|hurting myself|can't go on/i.test(prompt);
-
-    if (isDistress) {
-        return "It sounds like you are going through a very difficult time. I'm concerned for your safety. Please consider reaching out to your support circle by using the Crisis Alert button or contacting a professional from the Resource Library.";
+    if (context && context.type === 'journalAnalysis') {
+        if (!context.entries || context.entries.length < 3) {
+            return "Keep journaling to unlock deeper insights. The more you write, the more patterns I can help you see.";
+        }
+        if (prompt.includes("mood")) {
+             return "Based on your recent entries, your mood seems to be most positive when you mention activities like walking or spending time outside. It appears discussions about work are linked to feelings of anxiety.";
+        }
+        return "Based on your recent entries, it seems like you've been feeling more positive when you mention spending time outdoors. Perhaps that's something to explore more this week.";
     }
 
-    const responses = [
-        "I'm here to listen. Tell me more about what's on your mind.",
-        "That sounds like a lot to handle. How are you coping with it?",
-        "Thank you for sharing that with me. It takes courage to open up.",
-        "Remember to be kind to yourself. You're doing the best you can.",
-        "What's one small thing you could do for yourself right now?"
-    ];
-
-    // Simulate network delay
-    await new Promise(res => setTimeout(res, 1000));
-
-    return responses[Math.floor(Math.random() * responses.length)];
+    // This is a placeholder for the quote generation on the home screen
+    const genericQuote = "The sun is a daily reminder that we too can rise again from the darkness, that we too can shine our own light.";
+    return genericQuote;
 };
 
 
@@ -113,8 +109,29 @@ function AuthScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [username, setUsername] = useState('');
+  const [usernameStatus, setUsernameStatus] = useState(''); // '', 'checking', 'available', 'taken'
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+      if (isLogin || !username) {
+          setUsernameStatus('');
+          return;
+      }
+
+      setUsernameStatus('checking');
+      const debouncedCheck = setTimeout(async () => {
+          const usersRef = db.collection('users');
+          const querySnapshot = await usersRef.where('username', '==', username).get();
+          if (querySnapshot.empty) {
+              setUsernameStatus('available');
+          } else {
+              setUsernameStatus('taken');
+          }
+      }, 500);
+
+      return () => clearTimeout(debouncedCheck);
+  }, [username, isLogin]);
 
   const handleAuth = async (e) => {
     e.preventDefault();
@@ -128,8 +145,8 @@ function AuthScreen() {
         setError(err.message);
       }
     } else {
-      if (!username) {
-          setError("Please enter a username.");
+      if (!username || usernameStatus !== 'available') {
+          setError("Please choose an available username.");
           setLoading(false);
           return;
       }
@@ -140,9 +157,9 @@ function AuthScreen() {
           uid: newUser.uid,
           email: newUser.email,
           username: username,
-          status: 'Feeling Good',
           isAmbassador: false,
           isPremium: false,
+          bio: "This user hasn't written a bio yet."
         });
         await db.collection('supportCircles').doc(newUser.uid).set({ members: [] });
       } catch (err) {
@@ -157,13 +174,18 @@ function AuthScreen() {
       <h1 style={styles.title}>Status Check</h1>
       <form onSubmit={handleAuth} style={styles.form}>
         {!isLogin && (
-          <input
-            type="text"
-            style={styles.input}
-            placeholder="Choose a unique username"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-          />
+          <div>
+            <input
+              type="text"
+              style={styles.input}
+              placeholder="Choose a unique username"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+            />
+            {usernameStatus === 'checking' && <p style={{...styles.usernameStatus, color: '#f59e0b'}}>Checking...</p>}
+            {usernameStatus === 'available' && <p style={{...styles.usernameStatus, color: '#4ade80'}}>Username is available!</p>}
+            {usernameStatus === 'taken' && <p style={{...styles.usernameStatus, color: '#ef4444'}}>Username is taken.</p>}
+          </div>
         )}
         <input
           type="email"
@@ -180,7 +202,7 @@ function AuthScreen() {
           onChange={(e) => setPassword(e.target.value)}
         />
         {error && <p style={styles.errorText}>{error}</p>}
-        <button type="submit" style={styles.button} disabled={loading}>
+        <button type="submit" style={styles.button} disabled={loading || (!isLogin && usernameStatus !== 'available')}>
           {loading ? '...' : (isLogin ? 'Log In' : 'Sign Up')}
         </button>
       </form>
@@ -201,8 +223,6 @@ function AppShell() {
                 return <HomeScreen />;
             case 'My Circle':
                 return <SupportCircleScreen />;
-            case 'AI Companion':
-                return <AICompanionScreen />;
             case 'Journal':
                 return <JournalScreen />;
             case 'Resources':
@@ -227,13 +247,8 @@ function AppShell() {
 // --- Screens for Logged-In State ---
 function HomeScreen() {
     const { userData } = useFirebase();
-    const [quote, setQuote] = useState('');
     const [showModal, setShowModal] = useState(false);
     const [alertType, setAlertType] = useState('');
-
-    useEffect(() => {
-        callGeminiAPI("Give me a short, uplifting motivational quote about mental resilience.").then(setQuote);
-    }, []);
 
     const handleAlertClick = (type) => {
         setAlertType(type);
@@ -242,7 +257,7 @@ function HomeScreen() {
 
     const confirmAlert = () => {
         console.log(`${alertType} alert sent!`);
-        window.alert(`${alertType} alert has been sent to your Support Circle.`);
+        window.alert(`Your "${alertType}" alert has been sent to your Support Circle.`);
         setShowModal(false);
     };
 
@@ -252,7 +267,7 @@ function HomeScreen() {
                 <div style={styles.modalBackdrop}>
                     <div style={styles.modalContent}>
                         <h2 style={styles.header}>Confirm Alert</h2>
-                        <p style={styles.subtitle}>Are you sure you want to send a {alertType} alert?</p>
+                        <p style={styles.subtitle}>Are you sure you want to send an "{alertType}" alert?</p>
                         <div style={{display: 'flex', justifyContent: 'space-around', width: '100%'}}>
                             <button onClick={() => setShowModal(false)} style={{...styles.button, backgroundColor: '#555'}}>Cancel</button>
                             <button onClick={confirmAlert} style={{...styles.button, backgroundColor: '#dc2626'}}>Yes, Send</button>
@@ -262,14 +277,14 @@ function HomeScreen() {
             )}
 
             <h1 style={styles.header}>Welcome, {userData?.username || 'User'}!</h1>
-            <p style={{...styles.subtitle, fontStyle: 'italic', marginBottom: '48px'}}>"{quote}"</p>
+            <p style={styles.subtitle}>You are not alone. Help is a tap away.</p>
 
-            <div style={{display: 'flex', flexDirection: 'column', gap: '16px'}}>
-                <button onClick={() => handleAlertClick('Crisis')} style={{...styles.button, ...styles.crisisButton}}>
-                    CRISIS ALERT
+            <div style={{display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '48px'}}>
+                <button onClick={() => handleAlertClick('I need help')} style={{...styles.button, ...styles.crisisButton}}>
+                    I need help
                 </button>
-                <button onClick={() => handleAlertClick('Support Request')} style={{...styles.button, ...styles.supportButton}}>
-                    Support Request
+                <button onClick={() => handleAlertClick('I need to chat')} style={{...styles.button, ...styles.supportButton}}>
+                    I need to chat
                 </button>
             </div>
         </div>
@@ -345,6 +360,10 @@ function SupportCircleScreen() {
         }
     };
 
+    const sendWellbeingCheck = (username) => {
+        window.alert(`A gentle 'wellbeing check-in' has been sent to ${username}.`);
+    }
+
     return (
         <div>
             <h1 style={styles.header}>My Circle</h1>
@@ -364,11 +383,11 @@ function SupportCircleScreen() {
                 {circleMembers.length > 0 ? (
                     circleMembers.map(member => (
                         <div key={member.uid} style={styles.memberItem}>
-                            <div>
-                                <p style={styles.memberName}>{member.username}</p>
-                                <p style={{...styles.memberStatus, color: member.status === 'Feeling Good' ? '#4ade80' : member.status === 'Struggling' ? '#f87171' : '#facc15' }}>{member.status}</p>
+                            <p style={styles.memberName}>{member.username}</p>
+                             <div style={{display: 'flex', gap: '8px'}}>
+                                <button onClick={() => sendWellbeingCheck(member.username)} style={{...styles.button, padding: '8px 12px', fontSize: '12px'}}>Check In</button>
+                                <button onClick={() => handleRemoveFriend(member.uid)} style={styles.removeButton}>Remove</button>
                             </div>
-                            <button onClick={() => handleRemoveFriend(member.uid)} style={styles.removeButton}>Remove</button>
                         </div>
                     ))
                 ) : (
@@ -379,66 +398,20 @@ function SupportCircleScreen() {
     );
 }
 
-function AICompanionScreen() {
-    const { userData } = useFirebase();
-    const [chatHistory, setChatHistory] = useState([{sender: 'ai', text: 'Hello! I am your AI Companion. Feel free to talk about anything on your mind.'}]);
-    const [message, setMessage] = useState('');
-    const [isLoading, setIsLoading] = useState(false);
-
-    const handleSendMessage = async (e) => {
-        e.preventDefault();
-        if (!message.trim()) return;
-
-        const newMessage = { sender: 'user', text: message };
-        setChatHistory(prev => [...prev, newMessage]);
-        setMessage('');
-        setIsLoading(true);
-
-        const aiResponse = await callGeminiAPI(message);
-
-        setChatHistory(prev => [...prev, { sender: 'ai', text: aiResponse }]);
-        setIsLoading(false);
-    };
-
-    if (!userData?.isPremium) {
-        return <PremiumUpsell featureName="AI Companion Chat" />;
-    }
-
-    return (
-        <div style={{display: 'flex', flexDirection: 'column', height: '100%'}}>
-            <h1 style={styles.header}>AI Companion</h1>
-            <div style={styles.chatWindow}>
-                {chatHistory.map((chat, index) => (
-                    <div key={index} style={chat.sender === 'user' ? styles.userMessage : styles.aiMessage}>
-                        <p style={styles.chatText}>{chat.text}</p>
-                    </div>
-                ))}
-                {isLoading && <div style={styles.aiMessage}><p style={styles.chatText}>...</p></div>}
-            </div>
-            <form onSubmit={handleSendMessage} style={styles.chatForm}>
-                <input 
-                    type="text" 
-                    style={styles.chatInput} 
-                    placeholder="Type your message..."
-                    value={message}
-                    onChange={(e) => setMessage(e.target.value)}
-                    disabled={isLoading}
-                />
-                <button type="submit" style={styles.sendButton} disabled={isLoading}>Send</button>
-            </form>
-        </div>
-    );
-}
-
 function JournalScreen() {
-    const { user, db } = useFirebase();
+    const { user, db, userData } = useFirebase();
     const [entries, setEntries] = useState([]);
     const [newEntry, setNewEntry] = useState('');
+    const [isListening, setIsListening] = useState(false);
+    const [isListeningQuestion, setIsListeningQuestion] = useState(false);
+    const [question, setQuestion] = useState('');
+    const [insight, setInsight] = useState('');
+    const [isLoadingInsight, setIsLoadingInsight] = useState(false);
 
     useEffect(() => {
         if (!user) return;
 
-        const journalCollectionRef = db.collection('users').doc(user.uid).collection('journal').orderBy('createdAt', 'desc');
+        const journalCollectionRef = db.collection('users').doc(user.uid).collection('journal').orderBy('createdAt', 'desc').limit(20);
         const unsubscribe = journalCollectionRef.onSnapshot(snapshot => {
             const entriesData = snapshot.docs.map(doc => ({
                 id: doc.id,
@@ -465,6 +438,30 @@ function JournalScreen() {
         }
     };
 
+    const handleVoiceInput = (setter, listeningSetter) => {
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SpeechRecognition) {
+            alert("Sorry, your browser doesn't support voice recognition.");
+            return;
+        }
+
+        const recognition = new SpeechRecognition();
+        recognition.onstart = () => listeningSetter(true);
+        recognition.onend = () => listeningSetter(false);
+        recognition.onresult = (event) => setter(event.results[0][0].transcript);
+        recognition.onerror = (event) => console.error("Speech recognition error", event.error);
+        recognition.start();
+    };
+
+    const handleAskQuestion = async () => {
+        if (!question.trim()) return;
+        setIsLoadingInsight(true);
+        setInsight('');
+        const insightText = await callGeminiAPI(question, {type: 'journalAnalysis', entries: entries});
+        setInsight(insightText);
+        setIsLoadingInsight(false);
+    };
+
     return (
         <div>
             <h1 style={styles.header}>My Journal</h1>
@@ -473,13 +470,39 @@ function JournalScreen() {
                 <form onSubmit={handleAddEntry}>
                     <textarea 
                         style={{...styles.input, height: '100px', resize: 'vertical'}}
-                        placeholder="How are you feeling today?"
+                        placeholder={isListening ? "Listening..." : "How are you feeling today?"}
                         value={newEntry}
                         onChange={(e) => setNewEntry(e.target.value)}
                     />
-                    <button type="submit" style={styles.button}>Save Entry</button>
+                    <div style={{display: 'flex', gap: '10px'}}>
+                        <button type="submit" style={{...styles.button, flex: 1}}>Save Entry</button>
+                        <button type="button" onClick={() => handleVoiceInput(setNewEntry, setIsListening)} style={{...styles.button, backgroundColor: isListening ? '#ef4444' : '#6b7280'}}>🎤</button>
+                    </div>
                 </form>
             </div>
+
+            <div style={styles.card}>
+                <h2 style={styles.cardTitle}>Advanced AI Journaling</h2>
+                {userData?.isPremium ? (
+                    <div>
+                        <div style={{display: 'flex', gap: '10px'}}>
+                            <input 
+                                type="text" 
+                                style={{...styles.input, flex: 1}} 
+                                placeholder={isListeningQuestion ? "Listening..." : "Ask your journal a question..."} 
+                                value={question} 
+                                onChange={(e) => setQuestion(e.target.value)} 
+                            />
+                            <button type="button" onClick={() => handleVoiceInput(setQuestion, setIsListeningQuestion)} style={{...styles.button, padding: '0 20px', backgroundColor: isListeningQuestion ? '#ef4444' : '#6b7280'}}>🎤</button>
+                        </div>
+                        <button onClick={handleAskQuestion} style={{...styles.button, marginTop: '10px'}} disabled={isLoadingInsight}>{isLoadingInsight ? 'Analyzing...' : 'Get Insight'}</button>
+                        {insight && <p style={{...styles.successText, textAlign: 'left', fontStyle: 'italic'}}>{insight}</p>}
+                    </div>
+                ) : (
+                    <PremiumUpsell featureName="Advanced AI Journaling" />
+                )}
+            </div>
+
             <div style={styles.card}>
                 <h2 style={styles.cardTitle}>Recent Entries</h2>
                 {entries.length > 0 ? (
@@ -509,7 +532,7 @@ function ResourcesScreen() {
     const premiumResources = [
         { name: 'Guided Meditation for Anxiety', link: '#' },
         { name: 'Video Course: Understanding PTSD', link: '#' },
-        { name: 'Book Summary: The Body Keeps the Score', link: '#' },
+        { name: 'Calming Soundscapes', link: '#' },
     ];
 
     return (
@@ -533,7 +556,7 @@ function ResourcesScreen() {
                         </a>
                     ))
                 ) : (
-                    <PremiumUpsell featureName="Expanded Resource Library" />
+                    <PremiumUpsell featureName="Expanded Resource Library & Tools" />
                 )}
             </div>
         </div>
@@ -543,19 +566,6 @@ function ResourcesScreen() {
 function ProfileScreen() {
     const { auth, user, userData, db } = useFirebase();
     const [success, setSuccess] = useState('');
-
-    const handleStatusUpdate = async (newStatus) => {
-        if (!user) return;
-        try {
-            const userDocRef = db.collection('users').doc(user.uid);
-            await userDocRef.set({ status: newStatus }, { merge: true });
-            setSuccess(`Your status has been updated to "${newStatus}"`);
-            setTimeout(() => setSuccess(''), 3000);
-        } catch (err) {
-            console.error("Error updating status:", err);
-            alert("Could not update your status. Please try again.");
-        }
-    };
 
     const handleAmbassadorToggle = async (e) => {
         if (!user) return;
@@ -571,6 +581,11 @@ function ProfileScreen() {
         }
     };
 
+    const handleExportData = () => {
+        // This is a placeholder for a more complex data export feature
+        alert("Your journal data would be prepared for download here.");
+    }
+
     return (
         <div>
             <h1 style={styles.header}>Profile</h1>
@@ -580,20 +595,28 @@ function ProfileScreen() {
                 <p style={styles.label}>Username: {userData?.username}</p>
                 <p style={styles.label}>Email: {userData?.email}</p>
             </div>
-            <div style={styles.card}>
-                <h2 style={styles.cardTitle}>Set Your Daily Status</h2>
-                <div style={{display: 'flex', flexDirection: 'column', gap: '10px'}}>
-                    <button onClick={() => handleStatusUpdate('Feeling Good')} style={{...styles.button, backgroundColor: '#22c55e'}}>Feeling Good</button>
-                    <button onClick={() => handleStatusUpdate('Uneasy')} style={{...styles.button, backgroundColor: '#f59e0b'}}>Uneasy</button>
-                    <button onClick={() => handleStatusUpdate('Struggling')} style={{...styles.button, backgroundColor: '#ef4444'}}>Struggling</button>
-                </div>
-            </div>
              <div style={styles.card}>
                 <h2 style={styles.cardTitle}>Ambassador Program</h2>
                 <label style={styles.toggleContainer}>
                     <p style={{...styles.label, marginBottom: 0}}>Become an Ambassador</p>
                     <input type="checkbox" checked={userData?.isAmbassador || false} onChange={handleAmbassadorToggle} />
                 </label>
+            </div>
+             <div style={styles.card}>
+                <h2 style={styles.cardTitle}>Personalization</h2>
+                 {userData?.isPremium ? (
+                    <p style={styles.label}>Custom themes coming soon!</p>
+                 ) : (
+                    <PremiumUpsell featureName="Custom Themes & Data Export" />
+                 )}
+            </div>
+             <div style={styles.card}>
+                <h2 style={styles.cardTitle}>Data & Privacy</h2>
+                {userData?.isPremium ? (
+                    <button onClick={handleExportData} style={styles.button}>Export My Journal</button>
+                 ) : (
+                    <p style={styles.label}>Subscribe to export your data.</p>
+                 )}
             </div>
             <button onClick={() => auth.signOut()} style={{...styles.button, backgroundColor: '#6b7280'}}>
                 Log Out
@@ -612,8 +635,8 @@ function PremiumUpsell({ featureName }) {
     }
     return (
         <div style={styles.premiumUpsell}>
-            <p>Subscribe to unlock the {featureName} and more.</p>
-            <button onClick={handleSubscribe} style={{...styles.button, marginTop: '16px', backgroundColor: '#9333ea'}}>Subscribe Now for $2.99/month</button>
+            <p>Subscribe to unlock {featureName}.</p>
+            <button onClick={handleSubscribe} style={{...styles.button, marginTop: '16px', backgroundColor: '#9333ea'}}>Subscribe Now</button>
         </div>
     )
 }
@@ -621,7 +644,7 @@ function PremiumUpsell({ featureName }) {
 
 // --- Navigation ---
 function BottomNavBar({ currentPage, setCurrentPage }) {
-    const navItems = ['Home', 'My Circle', 'AI Companion', 'Journal', 'Resources', 'Profile'];
+    const navItems = ['Home', 'My Circle', 'Journal', 'Resources', 'Profile'];
     return (
         <div style={styles.navBar}>
             {navItems.map(item => (
@@ -686,6 +709,13 @@ const styles = {
     padding: '12px 16px',
     fontSize: '16px',
     marginBottom: '16px',
+  },
+  usernameStatus: {
+      fontSize: '12px',
+      textAlign: 'right',
+      marginTop: '-12px',
+      marginBottom: '12px',
+      height: '14px',
   },
   button: {
     backgroundColor: '#0891b2',
@@ -880,54 +910,6 @@ const styles = {
       backgroundColor: 'rgba(147, 51, 234, 0.1)',
       border: '1px dashed #9333ea',
       borderRadius: '8px',
-  },
-  chatWindow: {
-      flex: 1,
-      overflowY: 'auto',
-      padding: '10px',
-      display: 'flex',
-      flexDirection: 'column',
-      gap: '12px',
-  },
-  userMessage: {
-      alignSelf: 'flex-end',
-      backgroundColor: '#0891b2',
-      borderRadius: '15px',
-      padding: '10px 15px',
-      maxWidth: '80%',
-  },
-  aiMessage: {
-      alignSelf: 'flex-start',
-      backgroundColor: '#374151',
-      borderRadius: '15px',
-      padding: '10px 15px',
-      maxWidth: '80%',
-  },
-  chatText: {
-      color: '#fff',
-  },
-  chatForm: {
-      display: 'flex',
-      padding: '10px',
-      borderTop: '1px solid #374151',
-  },
-  chatInput: {
-      flex: 1,
-      backgroundColor: '#374151',
-      color: '#f9fafb',
-      border: '1px solid #4b5563',
-      borderRadius: '20px',
-      padding: '10px 15px',
-      fontSize: '16px',
-  },
-  sendButton: {
-      backgroundColor: '#0891b2',
-      color: '#fff',
-      border: 'none',
-      borderRadius: '20px',
-      padding: '10px 15px',
-      marginLeft: '10px',
-      cursor: 'pointer',
   }
 };
 

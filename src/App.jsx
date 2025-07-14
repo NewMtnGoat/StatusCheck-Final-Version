@@ -21,26 +21,14 @@ if (!firebase.apps.length) {
 const auth = firebase.auth();
 const db = firebase.firestore();
 
-// --- Advanced Mock Gemini API ---
-const callGeminiAPI = async (prompt, context = null) => {
-    // Simulate network delay for a more realistic feel
-    await new Promise(res => setTimeout(res, 1200));
-
-    if (context && context.type === 'journalAnalysis') {
-        if (!context.entries || context.entries.length < 3) {
-            return "Keep journaling to unlock deeper insights. The more you write, the more patterns I can help you see.";
-        }
-        if (prompt.includes("mood")) {
-             return "Based on your recent entries, your mood seems to be most positive when you mention activities like walking or spending time outside. It appears discussions about work are linked to feelings of anxiety.";
-        }
-        return "Based on your recent entries, it seems like you've been feeling more positive when you mention spending time outdoors. Perhaps that's something to explore more this week.";
-    }
-
-    // This is a placeholder for the quote generation on the home screen
-    const genericQuote = "The sun is a daily reminder that we too can rise again from the darkness, that we too can shine our own light.";
-    return genericQuote;
+// --- Mock API for username suggestions ---
+const suggestUsernames = (baseUsername) => {
+    return [
+        `${baseUsername}${Math.floor(Math.random() * 100)}`,
+        `${baseUsername}_${Math.floor(Math.random() * 10)}`,
+        `The${baseUsername}`,
+    ];
 };
-
 
 // --- React Context for Auth and DB ---
 const FirebaseContext = createContext(null);
@@ -51,24 +39,22 @@ const FirebaseProvider = ({ children }) => {
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        const unsubscribe = auth.onAuthStateChanged(user => {
-            setUser(user);
+        const unsubscribe = auth.onAuthStateChanged(async (user) => {
+            if (user) {
+                const userDocRef = db.collection('users').doc(user.uid);
+                const unsubscribeSnapshot = userDocRef.onSnapshot(docSnap => {
+                    setUserData(docSnap.exists ? docSnap.data() : null);
+                });
+                setUser(user);
+                return () => unsubscribeSnapshot();
+            } else {
+                setUser(null);
+                setUserData(null);
+            }
             setLoading(false);
         });
-        return () => unsubscribe();
+        return unsubscribe;
     }, []);
-
-    useEffect(() => {
-        if (user) {
-            const userDocRef = db.collection('users').doc(user.uid);
-            const unsubscribeSnapshot = userDocRef.onSnapshot(docSnap => {
-                setUserData(docSnap.exists ? docSnap.data() : null);
-            });
-            return () => unsubscribeSnapshot();
-        } else {
-            setUserData(null);
-        }
-    }, [user]);
 
     const value = { user, userData, loading, auth, db };
 
@@ -109,13 +95,16 @@ function AuthScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [username, setUsername] = useState('');
-  const [usernameStatus, setUsernameStatus] = useState(''); // '', 'checking', 'available', 'taken'
+  const [useEmailAsUsername, setUseEmailAsUsername] = useState(false);
+  const [usernameStatus, setUsernameStatus] = useState('');
+  const [suggestedUsernames, setSuggestedUsernames] = useState([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-      if (isLogin || !username) {
+      if (isLogin || useEmailAsUsername || !username) {
           setUsernameStatus('');
+          setSuggestedUsernames([]);
           return;
       }
 
@@ -125,13 +114,15 @@ function AuthScreen() {
           const querySnapshot = await usersRef.where('username', '==', username).get();
           if (querySnapshot.empty) {
               setUsernameStatus('available');
+              setSuggestedUsernames([]);
           } else {
               setUsernameStatus('taken');
+              setSuggestedUsernames(suggestUsernames(username));
           }
       }, 500);
 
       return () => clearTimeout(debouncedCheck);
-  }, [username, isLogin]);
+  }, [username, isLogin, useEmailAsUsername]);
 
   const handleAuth = async (e) => {
     e.preventDefault();
@@ -145,8 +136,9 @@ function AuthScreen() {
         setError(err.message);
       }
     } else {
-      if (!username || usernameStatus !== 'available') {
-          setError("Please choose an available username.");
+      const finalUsername = useEmailAsUsername ? email : username;
+      if (!finalUsername || (!useEmailAsUsername && usernameStatus !== 'available')) {
+          setError("Please provide a valid email and an available username.");
           setLoading(false);
           return;
       }
@@ -156,9 +148,8 @@ function AuthScreen() {
         await db.collection('users').doc(newUser.uid).set({
           uid: newUser.uid,
           email: newUser.email,
-          username: username,
+          username: finalUsername,
           isAmbassador: false,
-          isPremium: false,
           bio: "This user hasn't written a bio yet."
         });
         await db.collection('supportCircles').doc(newUser.uid).set({ members: [] });
@@ -174,18 +165,36 @@ function AuthScreen() {
       <h1 style={styles.title}>Status Check</h1>
       <form onSubmit={handleAuth} style={styles.form}>
         {!isLogin && (
-          <div>
-            <input
-              type="text"
-              style={styles.input}
-              placeholder="Choose a unique username"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-            />
-            {usernameStatus === 'checking' && <p style={{...styles.usernameStatus, color: '#f59e0b'}}>Checking...</p>}
-            {usernameStatus === 'available' && <p style={{...styles.usernameStatus, color: '#4ade80'}}>Username is available!</p>}
-            {usernameStatus === 'taken' && <p style={{...styles.usernameStatus, color: '#ef4444'}}>Username is taken.</p>}
-          </div>
+          <>
+            <div style={{marginBottom: '16px'}}>
+                <label style={styles.toggleContainer}>
+                    <input type="checkbox" checked={useEmailAsUsername} onChange={(e) => setUseEmailAsUsername(e.target.checked)} />
+                    <span style={{...styles.label, marginBottom: 0, marginLeft: '8px'}}>Use email as username</span>
+                </label>
+            </div>
+            {!useEmailAsUsername && (
+                 <div>
+                    <input
+                      type="text"
+                      style={styles.input}
+                      placeholder="Choose a unique username"
+                      value={username}
+                      onChange={(e) => setUsername(e.target.value)}
+                    />
+                    {usernameStatus === 'checking' && <p style={{...styles.usernameStatus, color: '#f59e0b'}}>Checking...</p>}
+                    {usernameStatus === 'available' && <p style={{...styles.usernameStatus, color: '#4ade80'}}>Username is available!</p>}
+                    {usernameStatus === 'taken' && <p style={{...styles.usernameStatus, color: '#ef4444'}}>Username is taken.</p>}
+                    {usernameStatus === 'taken' && suggestedUsernames.length > 0 && (
+                        <div style={styles.suggestionsContainer}>
+                            <p style={{margin: 0, fontSize: '12px'}}>Suggestions:</p>
+                            {suggestedUsernames.map(name => (
+                                <button key={name} type="button" onClick={() => setUsername(name)} style={styles.suggestionButton}>{name}</button>
+                            ))}
+                        </div>
+                    )}
+                  </div>
+            )}
+          </>
         )}
         <input
           type="email"
@@ -202,7 +211,7 @@ function AuthScreen() {
           onChange={(e) => setPassword(e.target.value)}
         />
         {error && <p style={styles.errorText}>{error}</p>}
-        <button type="submit" style={styles.button} disabled={loading || (!isLogin && usernameStatus !== 'available')}>
+        <button type="submit" style={styles.button} disabled={loading || (!isLogin && !useEmailAsUsername && usernameStatus !== 'available')}>
           {loading ? '...' : (isLogin ? 'Log In' : 'Sign Up')}
         </button>
       </form>
@@ -229,6 +238,8 @@ function AppShell() {
                 return <ResourcesScreen />;
             case 'Profile':
                 return <ProfileScreen />;
+            case 'Suggestions':
+                return <SuggestionBoxScreen />;
             default:
                 return <HomeScreen />;
         }
@@ -325,21 +336,33 @@ function SupportCircleScreen() {
         setError('');
         setSuccess('');
 
-        if (!friendId.trim()) { setError("Please enter a User ID."); return; }
-        if (friendId === user.uid) { setError("You cannot add yourself to your circle."); return; }
+        if (!friendId.trim()) { setError("Please enter a User ID or Email."); return; }
+        if (friendId === user.uid || friendId === user.email) { setError("You cannot add yourself to your circle."); return; }
 
         try {
-            const friendDocRef = db.collection('users').doc(friendId);
-            const friendDoc = await friendDocRef.get();
+            let friendQuery;
+            if (friendId.includes('@')) {
+                friendQuery = db.collection('users').where('email', '==', friendId);
+            } else {
+                friendQuery = db.collection('users').where('username', '==', friendId);
+            }
 
-            if (!friendDoc.exists) { setError("User ID not found."); return; }
+            const querySnapshot = await friendQuery.get();
+
+            if (querySnapshot.empty) {
+                setError("User not found.");
+                return;
+            }
+
+            const friendDoc = querySnapshot.docs[0];
+            const friendUid = friendDoc.id;
 
             const circleDocRef = db.collection('supportCircles').doc(user.uid);
             await circleDocRef.set({ 
-                members: firebase.firestore.FieldValue.arrayUnion(friendId) 
+                members: firebase.firestore.FieldValue.arrayUnion(friendUid) 
             }, { merge: true });
 
-            setSuccess(`Added friend to your circle!`);
+            setSuccess(`Added ${friendDoc.data().username} to your circle!`);
             setFriendId('');
         } catch (err) {
             setError("Could not add friend. Please try again.");
@@ -360,19 +383,13 @@ function SupportCircleScreen() {
         }
     };
 
-    const sendWellbeingCheck = (username) => {
-        window.alert(`A gentle 'wellbeing check-in' has been sent to ${username}.`);
-    }
-
     return (
         <div>
             <h1 style={styles.header}>My Circle</h1>
             <div style={styles.card}>
                 <h2 style={styles.cardTitle}>Add a Friend</h2>
-                <p style={styles.label}>Your User ID (share this with friends):</p>
-                <p style={styles.userIdText}>{user?.uid}</p>
                 <form onSubmit={handleAddFriend} style={styles.form}>
-                    <input type="text" style={styles.input} placeholder="Enter friend's User ID" value={friendId} onChange={(e) => setFriendId(e.target.value)} />
+                    <input type="text" style={styles.input} placeholder="Enter friend's Username or Email" value={friendId} onChange={(e) => setFriendId(e.target.value)} />
                     <button type="submit" style={styles.button}>Add Friend</button>
                     {error && <p style={styles.errorText}>{error}</p>}
                     {success && <p style={styles.successText}>{success}</p>}
@@ -384,10 +401,7 @@ function SupportCircleScreen() {
                     circleMembers.map(member => (
                         <div key={member.uid} style={styles.memberItem}>
                             <p style={styles.memberName}>{member.username}</p>
-                             <div style={{display: 'flex', gap: '8px'}}>
-                                <button onClick={() => sendWellbeingCheck(member.username)} style={{...styles.button, padding: '8px 12px', fontSize: '12px'}}>Check In</button>
-                                <button onClick={() => handleRemoveFriend(member.uid)} style={styles.removeButton}>Remove</button>
-                            </div>
+                            <button onClick={() => handleRemoveFriend(member.uid)} style={styles.removeButton}>Remove</button>
                         </div>
                     ))
                 ) : (
@@ -399,19 +413,14 @@ function SupportCircleScreen() {
 }
 
 function JournalScreen() {
-    const { user, db, userData } = useFirebase();
+    const { user, db } = useFirebase();
     const [entries, setEntries] = useState([]);
     const [newEntry, setNewEntry] = useState('');
-    const [isListening, setIsListening] = useState(false);
-    const [isListeningQuestion, setIsListeningQuestion] = useState(false);
-    const [question, setQuestion] = useState('');
-    const [insight, setInsight] = useState('');
-    const [isLoadingInsight, setIsLoadingInsight] = useState(false);
 
     useEffect(() => {
         if (!user) return;
 
-        const journalCollectionRef = db.collection('users').doc(user.uid).collection('journal').orderBy('createdAt', 'desc').limit(20);
+        const journalCollectionRef = db.collection('users').doc(user.uid).collection('journal').orderBy('createdAt', 'desc');
         const unsubscribe = journalCollectionRef.onSnapshot(snapshot => {
             const entriesData = snapshot.docs.map(doc => ({
                 id: doc.id,
@@ -438,30 +447,6 @@ function JournalScreen() {
         }
     };
 
-    const handleVoiceInput = (setter, listeningSetter) => {
-        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-        if (!SpeechRecognition) {
-            alert("Sorry, your browser doesn't support voice recognition.");
-            return;
-        }
-
-        const recognition = new SpeechRecognition();
-        recognition.onstart = () => listeningSetter(true);
-        recognition.onend = () => listeningSetter(false);
-        recognition.onresult = (event) => setter(event.results[0][0].transcript);
-        recognition.onerror = (event) => console.error("Speech recognition error", event.error);
-        recognition.start();
-    };
-
-    const handleAskQuestion = async () => {
-        if (!question.trim()) return;
-        setIsLoadingInsight(true);
-        setInsight('');
-        const insightText = await callGeminiAPI(question, {type: 'journalAnalysis', entries: entries});
-        setInsight(insightText);
-        setIsLoadingInsight(false);
-    };
-
     return (
         <div>
             <h1 style={styles.header}>My Journal</h1>
@@ -470,39 +455,13 @@ function JournalScreen() {
                 <form onSubmit={handleAddEntry}>
                     <textarea 
                         style={{...styles.input, height: '100px', resize: 'vertical'}}
-                        placeholder={isListening ? "Listening..." : "How are you feeling today?"}
+                        placeholder="How are you feeling today?"
                         value={newEntry}
                         onChange={(e) => setNewEntry(e.target.value)}
                     />
-                    <div style={{display: 'flex', gap: '10px'}}>
-                        <button type="submit" style={{...styles.button, flex: 1}}>Save Entry</button>
-                        <button type="button" onClick={() => handleVoiceInput(setNewEntry, setIsListening)} style={{...styles.button, backgroundColor: isListening ? '#ef4444' : '#6b7280'}}>🎤</button>
-                    </div>
+                    <button type="submit" style={styles.button}>Save Entry</button>
                 </form>
             </div>
-
-            <div style={styles.card}>
-                <h2 style={styles.cardTitle}>Advanced AI Journaling</h2>
-                {userData?.isPremium ? (
-                    <div>
-                        <div style={{display: 'flex', gap: '10px'}}>
-                            <input 
-                                type="text" 
-                                style={{...styles.input, flex: 1}} 
-                                placeholder={isListeningQuestion ? "Listening..." : "Ask your journal a question..."} 
-                                value={question} 
-                                onChange={(e) => setQuestion(e.target.value)} 
-                            />
-                            <button type="button" onClick={() => handleVoiceInput(setQuestion, setIsListeningQuestion)} style={{...styles.button, padding: '0 20px', backgroundColor: isListeningQuestion ? '#ef4444' : '#6b7280'}}>🎤</button>
-                        </div>
-                        <button onClick={handleAskQuestion} style={{...styles.button, marginTop: '10px'}} disabled={isLoadingInsight}>{isLoadingInsight ? 'Analyzing...' : 'Get Insight'}</button>
-                        {insight && <p style={{...styles.successText, textAlign: 'left', fontStyle: 'italic'}}>{insight}</p>}
-                    </div>
-                ) : (
-                    <PremiumUpsell featureName="Advanced AI Journaling" />
-                )}
-            </div>
-
             <div style={styles.card}>
                 <h2 style={styles.cardTitle}>Recent Entries</h2>
                 {entries.length > 0 ? (
@@ -523,17 +482,16 @@ function JournalScreen() {
 }
 
 function ResourcesScreen() {
-    const { userData } = useFirebase();
-
     const freeResources = [
         { name: 'National Crisis and Suicide Lifeline', number: '988', link: 'tel:988' },
         { name: 'Crisis Text Line', number: 'Text HOME to 741741', link: 'sms:741741' },
     ];
-    const premiumResources = [
-        { name: 'Guided Meditation for Anxiety', link: '#' },
-        { name: 'Video Course: Understanding PTSD', link: '#' },
-        { name: 'Calming Soundscapes', link: '#' },
-    ];
+
+    const educationalResources = [
+        { name: 'Understanding PTSD', description: 'From the National Institute of Mental Health.', link: '#' },
+        { name: 'Grounding Techniques for Anxiety', description: 'A helpful guide for managing moments of panic.', link: '#' },
+        { name: 'Building a Support System', description: 'Tips on how to talk to friends and family.', link: '#' },
+    ]
 
     return (
         <div>
@@ -548,16 +506,18 @@ function ResourcesScreen() {
                 ))}
             </div>
             <div style={styles.card}>
-                <h2 style={styles.cardTitle}>Premium Wellness Library</h2>
-                {userData?.isPremium ? (
-                     premiumResources.map(resource => (
-                        <a href={resource.link} key={resource.name} style={styles.resourceItem}>
-                            <p style={styles.resourceName}>{resource.name}</p>
-                        </a>
-                    ))
-                ) : (
-                    <PremiumUpsell featureName="Expanded Resource Library & Tools" />
-                )}
+                <h2 style={styles.cardTitle}>Learn & Understand</h2>
+                {educationalResources.map(resource => (
+                    <a href={resource.link} key={resource.name} style={styles.resourceItem}>
+                        <p style={styles.resourceName}>{resource.name}</p>
+                        <p style={styles.resourceDescription}>{resource.description}</p>
+                    </a>
+                ))}
+            </div>
+            <div style={styles.card}>
+                 <h2 style={styles.cardTitle}>Support Our Mission</h2>
+                 <p style={styles.label}>If you find this app helpful, please consider supporting our mission to keep it free and accessible for everyone.</p>
+                 <button onClick={() => window.open('https://www.buymeacoffee.com', '_blank')} style={{...styles.button, backgroundColor: '#9333ea', marginTop: '10px'}}>Pay What You Can</button>
             </div>
         </div>
     )
@@ -581,11 +541,6 @@ function ProfileScreen() {
         }
     };
 
-    const handleExportData = () => {
-        // This is a placeholder for a more complex data export feature
-        alert("Your journal data would be prepared for download here.");
-    }
-
     return (
         <div>
             <h1 style={styles.header}>Profile</h1>
@@ -603,20 +558,9 @@ function ProfileScreen() {
                 </label>
             </div>
              <div style={styles.card}>
-                <h2 style={styles.cardTitle}>Personalization</h2>
-                 {userData?.isPremium ? (
-                    <p style={styles.label}>Custom themes coming soon!</p>
-                 ) : (
-                    <PremiumUpsell featureName="Custom Themes & Data Export" />
-                 )}
-            </div>
-             <div style={styles.card}>
-                <h2 style={styles.cardTitle}>Data & Privacy</h2>
-                {userData?.isPremium ? (
-                    <button onClick={handleExportData} style={styles.button}>Export My Journal</button>
-                 ) : (
-                    <p style={styles.label}>Subscribe to export your data.</p>
-                 )}
+                <h2 style={styles.cardTitle}>For Organizations</h2>
+                <p style={styles.label}>Interested in providing Status Check as a resource for your team or organization? Contact us to learn more.</p>
+                <a href="mailto:partnerships@statuscheck.app" style={{...styles.button, textDecoration: 'none', textAlign: 'center'}}>Contact Us</a>
             </div>
             <button onClick={() => auth.signOut()} style={{...styles.button, backgroundColor: '#6b7280'}}>
                 Log Out
@@ -625,26 +569,43 @@ function ProfileScreen() {
     )
 }
 
-function PremiumUpsell({ featureName }) {
-    const { user, db } = useFirebase();
-    const handleSubscribe = async () => {
-        window.alert("This would normally redirect to a payment processor. For this demo, we'll enable premium features now.");
-        if (user) {
-            await db.collection('users').doc(user.uid).update({ isPremium: true });
-        }
-    }
+function SuggestionBoxScreen() {
+    const [suggestion, setSuggestion] = useState('');
+    const [isSent, setIsSent] = useState(false);
+
+    const handleSubmit = (e) => {
+        e.preventDefault();
+        if (!suggestion.trim()) return;
+        console.log("Suggestion submitted:", suggestion);
+        setSuggestion('');
+        setIsSent(true);
+        setTimeout(() => setIsSent(false), 3000);
+    };
+
     return (
-        <div style={styles.premiumUpsell}>
-            <p>Subscribe to unlock {featureName}.</p>
-            <button onClick={handleSubscribe} style={{...styles.button, marginTop: '16px', backgroundColor: '#9333ea'}}>Subscribe Now</button>
+        <div>
+            <h1 style={styles.header}>Suggestion Box</h1>
+            <div style={styles.card}>
+                <p style={styles.label}>Have an idea to improve the app? We'd love to hear it!</p>
+                <form onSubmit={handleSubmit}>
+                    <textarea 
+                        style={{...styles.input, height: '120px', resize: 'vertical'}}
+                        placeholder="Type your suggestion here..."
+                        value={suggestion}
+                        onChange={(e) => setSuggestion(e.target.value)}
+                    />
+                    <button type="submit" style={styles.button}>Submit Suggestion</button>
+                    {isSent && <p style={styles.successText}>Thank you for your feedback!</p>}
+                </form>
+            </div>
         </div>
-    )
+    );
 }
 
 
 // --- Navigation ---
 function BottomNavBar({ currentPage, setCurrentPage }) {
-    const navItems = ['Home', 'My Circle', 'Journal', 'Resources', 'Profile'];
+    const navItems = ['Home', 'My Circle', 'Journal', 'Resources', 'Profile', 'Suggestions'];
     return (
         <div style={styles.navBar}>
             {navItems.map(item => (
@@ -716,6 +677,21 @@ const styles = {
       marginTop: '-12px',
       marginBottom: '12px',
       height: '14px',
+  },
+  suggestionsContainer: {
+    display: 'flex',
+    gap: '8px',
+    flexWrap: 'wrap',
+    marginBottom: '16px',
+  },
+  suggestionButton: {
+      backgroundColor: '#374151',
+      color: '#d1d5db',
+      border: '1px solid #4b5563',
+      borderRadius: '12px',
+      padding: '4px 8px',
+      fontSize: '12px',
+      cursor: 'pointer',
   },
   button: {
     backgroundColor: '#0891b2',
@@ -904,12 +880,10 @@ const styles = {
       color: '#22d3ee',
       marginTop: '4px',
   },
-  premiumUpsell: {
-      textAlign: 'center',
-      padding: '24px',
-      backgroundColor: 'rgba(147, 51, 234, 0.1)',
-      border: '1px dashed #9333ea',
-      borderRadius: '8px',
+  resourceDescription: {
+      color: '#d1d5db',
+      fontSize: '12px',
+      marginTop: '4px',
   }
 };
 

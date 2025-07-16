@@ -487,12 +487,6 @@ function ResourcesScreen() {
         { name: 'Crisis Text Line', number: 'Text HOME to 741741', link: 'sms:741741' },
     ];
 
-    const educationalResources = [
-        { name: 'Understanding PTSD', description: 'From the National Institute of Mental Health.', link: '#' },
-        { name: 'Grounding Techniques for Anxiety', description: 'A helpful guide for managing moments of panic.', link: '#' },
-        { name: 'Building a Support System', description: 'Tips on how to talk to friends and family.', link: '#' },
-    ]
-
     return (
         <div>
             <h1 style={styles.header}>Resources</h1>
@@ -502,15 +496,6 @@ function ResourcesScreen() {
                     <a href={resource.link} key={resource.name} style={styles.resourceItem}>
                         <p style={styles.resourceName}>{resource.name}</p>
                         <p style={styles.resourceContact}>{resource.number}</p>
-                    </a>
-                ))}
-            </div>
-            <div style={styles.card}>
-                <h2 style={styles.cardTitle}>Learn & Understand</h2>
-                {educationalResources.map(resource => (
-                    <a href={resource.link} key={resource.name} style={styles.resourceItem}>
-                        <p style={styles.resourceName}>{resource.name}</p>
-                        <p style={styles.resourceDescription}>{resource.description}</p>
                     </a>
                 ))}
             </div>
@@ -880,11 +865,6 @@ const styles = {
       color: '#22d3ee',
       marginTop: '4px',
   },
-  resourceDescription: {
-      color: '#d1d5db',
-      fontSize: '12px',
-      marginTop: '4px',
-  }
 };
 
 // --- Root Component for Replit ---
